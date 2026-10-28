@@ -23,8 +23,11 @@ Notes:
     subset of train, and the test split is never touched.
   - the final test R2 is computed by the harness on the raw y.
 """
+
 import os
 import sys
+from typing import Any
+
 import numpy as np
 import pandas as pd
 from sklearn.base import BaseEstimator, RegressorMixin
@@ -35,6 +38,7 @@ def _load_engine():
     sys.path); for local runs fall back to SHR_ENGINE / a relative path."""
     try:
         import shr_v7_full as SF  # after official install
+
         return SF
     except Exception:
         pass
@@ -44,19 +48,19 @@ def _load_engine():
         cands.append(env)
     here = os.path.dirname(os.path.abspath(__file__))
     # experiment/methods/shr/ -> local engine (development)
-    cands.append(os.path.normpath(os.path.join(
-        here, "..", "..", "..", "engine")))
+    cands.append(os.path.normpath(os.path.join(here, "..", "..", "..", "engine")))
     cands.append(os.path.normpath(os.path.join(here, "..", "..", "..")))
     for d in cands:
-        if d and os.path.isdir(d) and os.path.isfile(
-                os.path.join(d, "shr_v7_full.py")):
+        if d and os.path.isdir(d) and os.path.isfile(os.path.join(d, "shr_v7_full.py")):
             if d not in sys.path:
                 sys.path.insert(0, d)
             import shr_v7_full as SF  # noqa: E402
+
             return SF
     raise ImportError(
         "Cannot find the SHR engine: make sure the install script has set up "
-        "shr_engine, or set SHR_ENGINE to the engine directory")
+        "shr_engine, or set SHR_ENGINE to the engine directory"
+    )
 
 
 SF = _load_engine()
@@ -64,6 +68,9 @@ SF = _load_engine()
 
 class SHRv7Estimator(BaseEstimator, RegressorMixin):
     """SHR estimator wrapping deterministic solving and a GP fallback."""
+
+    engine_: Any
+    symbolic_model: Any
 
     def __init__(self, random_state=None, quick=False, max_time=None):
         self.random_state = random_state
@@ -82,8 +89,8 @@ class SHRv7Estimator(BaseEstimator, RegressorMixin):
         yv = np.asarray(y, float).flatten()
         seed = 0 if self.random_state is None else int(self.random_state)
         self.engine_ = SF.fit_engine_full(
-            Xv, yv, names, seed=seed, quick=self.quick,
-            max_time=self.max_time)
+            Xv, yv, names, seed=seed, quick=self.quick, max_time=self.max_time
+        )
         self.symbolic_model = self._to_string()
         return self
 
@@ -94,8 +101,11 @@ class SHRv7Estimator(BaseEstimator, RegressorMixin):
         pred = np.asarray(self.engine_.predict(X), float)
         if pred.ndim == 0:
             pred = np.full(X.shape[0], float(pred))
-        pred = np.where(np.isfinite(pred), pred, np.nan_to_num(
-            pred, nan=0.0, posinf=0.0, neginf=0.0))
+        pred = np.where(
+            np.isfinite(pred),
+            pred,
+            np.nan_to_num(pred, nan=0.0, posinf=0.0, neginf=0.0),
+        )
         return pred
 
     def _to_string(self):
@@ -110,6 +120,7 @@ class SHRv7Estimator(BaseEstimator, RegressorMixin):
         # exact path: internal tuple -> simplified sympy expression
         try:
             import symbol_simplify as SS
+
             expr = SS.clean_sympy(m._expr, list(m.names0))
             if expr is not None:
                 return str(expr)
@@ -118,6 +129,7 @@ class SHRv7Estimator(BaseEstimator, RegressorMixin):
             try:
                 import structure_guided as SG
                 import symbol_simplify as SS
+
                 expr = SS.clean_sympy(SG.c2var(m._expr), list(m.names0))
                 if expr is not None:
                     return str(expr)
@@ -134,7 +146,8 @@ def model(est, X=None):
 def complexity(est):
     """Optional custom complexity (the harness defaults to sympy; this is the
     fallback if that fails)."""
-    from sympy import sympify, count_ops
+    from sympy import count_ops, sympify
+
     try:
         expr = sympify(est.symbolic_model)
         n_atoms = len(expr.free_symbols)
